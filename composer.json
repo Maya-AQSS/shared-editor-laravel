@@ -1,0 +1,68 @@
+{
+    "name": "ceedcv-maya/shared-editor-laravel",
+    "description": "Server-side renderers for TipTap/ProseMirror JSON documents: TiptapHtmlRenderer (SSR HTML), BlockNoteToTiptap (legacy conversion), DocxExporter (Word export). Domain-agnostic — usable from any Laravel app rendering rich editor content.",
+    "type": "library",
+    "license": "MIT",
+    "homepage": "https://github.com/Maya-AQSS/shared-editor-laravel",
+    "support": {
+        "issues": "https://github.com/Maya-AQSS/maya_platform/issues",
+        "source": "https://github.com/Maya-AQSS/shared-editor-laravel"
+    },
+    "require": {
+        "php": "^8.4",
+        "illuminate/support": "^11.0 || ^12.0 || ^13.0"
+    },
+    "require-dev": {
+        "pestphp/pest": "^3.0",
+        "orchestra/testbench": "^9.0 || ^10.0"
+    },
+    "suggest": {
+        "phpoffice/phpword": "Required for DocxExporter (HTML to .docx export)."
+    },
+    "autoload": {
+        "psr-4": {
+            "Maya\\Editor\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "pest --colors=always",
+        "test-coverage": "pest --coverage --min=80"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Maya\\Editor\\Providers\\SharedEditorServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "keywords": [
+        "laravel",
+        "tiptap",
+        "prosemirror",
+        "blocknote",
+        "html",
+        "renderer",
+        "ssr",
+        "ceedcv",
+        "maya"
+    ],
+    "authors": [
+        {
+            "name": "CEEDCV",
+            "email": "info@ceedcv.es",
+            "homepage": "https://ceedcv.es"
+        }
+    ]
+}
