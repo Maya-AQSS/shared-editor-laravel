@@ -184,7 +184,7 @@ final class TiptapHtmlRenderer
      */
     private static function renderImage(array $attrs): string
     {
-        $src = (string) ($attrs['src'] ?? '');
+        $src = self::validateImageSrc((string) ($attrs['src'] ?? ''));
         $alt = (string) ($attrs['alt'] ?? '');
         $caption = (string) ($attrs['caption'] ?? '');
         if ($src === '') {
@@ -361,6 +361,26 @@ final class TiptapHtmlRenderer
         }
 
         // If href doesn't match allowed schemes, return empty string (link becomes useless).
+        return '';
+    }
+
+    /**
+     * Validate an image src. Allows http(s), relative paths/fragments and
+     * inline `data:image/*` payloads (legitimate base64 images); rejects
+     * anything else (javascript:, data:text/html, quote-injection garbage…)
+     * by returning an empty string so the image is dropped.
+     */
+    private static function validateImageSrc(string $src): string
+    {
+        if ($src === '') {
+            return '';
+        }
+
+        $pattern = '/^(https?:|data:image\/|#|\/|\.\/|\.\.\/)/i';
+        if (preg_match($pattern, $src) === 1) {
+            return $src;
+        }
+
         return '';
     }
 

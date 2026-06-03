@@ -4,192 +4,325 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
-use Maya\Editor\Renderers\BlockNoteToTiptap;
 use Maya\Editor\Renderers\TiptapHtmlRenderer;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Oracle parity tests: every case feeds the SAME BlockNote JSON input to
- *   (a) the legacy mental model (asserted HTML strings)
- *   (b) BlockNoteToTiptap::convert → TiptapHtmlRenderer::renderDoc
- * The two outputs must be functionally equivalent (the renderer mirrors
- * what the legacy `BlockNoteHtmlRenderer` produced, modulo benign markup
- * variations explicitly noted per case).
+ * TiptapHtmlRenderer tests: validates that the renderer produces safe HTML
+ * from Tiptap/ProseMirror JSON documents, with emphasis on XSS prevention,
+ * protocol blocking (javascript:, data:, vbscript:), color sanitization,
+ * numeric cast for colspan/rowspan, and mark/list/table rendering.
  */
 final class TiptapHtmlRendererTest extends TestCase
 {
-    private static function renderFromBlockNote(array $blocks): string
+    private static function render(array $doc): string
     {
-        $doc = BlockNoteToTiptap::convert($blocks);
-
         return TiptapHtmlRenderer::renderDoc($doc);
     }
 
-    // ─── 14 ported from BlockNoteHtmlRendererTest ─────────────────────────
+    // ─── test_01: empty doc ─────────────────────────────────────────────────
 
     public function test_01_renders_empty_array_to_empty_string(): void
     {
-        $this->assertSame('', self::renderFromBlockNote([]));
+        $doc = ['type' => 'doc', 'content' => []];
+        $this->assertSame('', self::render($doc));
     }
+
+    // ─── test_02: paragraph ─────────────────────────────────────────────────
 
     public function test_02_renders_paragraph_with_inline_text(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'paragraph',
-            'content' => [['type' => 'text', 'text' => 'Hola mundo', 'styles' => []]],
-        ]]);
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'paragraph',
+                'attrs' => [],
+                'content' => [['type' => 'text', 'text' => 'Hola mundo']],
+            ]],
+        ];
 
+        $html = self::render($doc);
         $this->assertStringContainsString('<p>Hola mundo</p>', $html);
     }
 
+    // ─── test_03: heading levels 1–6 ────────────────────────────────────────
+
     public function test_03_renders_heading_levels_1_to_6(): void
     {
-        foreach ([1, 2, 3, 4, 5, 6] as $level) {
-            $html = self::renderFromBlockNote([[
+        $docs = [
+            1 => ['type' => 'doc', 'content' => [[
                 'type' => 'heading',
-                'props' => ['level' => $level],
-                'content' => [['type' => 'text', 'text' => 'T'.$level, 'styles' => []]],
-            ]]);
+                'attrs' => ['level' => 1],
+                'content' => [['type' => 'text', 'text' => 'T1']],
+            ]]],
+            2 => ['type' => 'doc', 'content' => [[
+                'type' => 'heading',
+                'attrs' => ['level' => 2],
+                'content' => [['type' => 'text', 'text' => 'T2']],
+            ]]],
+            3 => ['type' => 'doc', 'content' => [[
+                'type' => 'heading',
+                'attrs' => ['level' => 3],
+                'content' => [['type' => 'text', 'text' => 'T3']],
+            ]]],
+            4 => ['type' => 'doc', 'content' => [[
+                'type' => 'heading',
+                'attrs' => ['level' => 4],
+                'content' => [['type' => 'text', 'text' => 'T4']],
+            ]]],
+            5 => ['type' => 'doc', 'content' => [[
+                'type' => 'heading',
+                'attrs' => ['level' => 5],
+                'content' => [['type' => 'text', 'text' => 'T5']],
+            ]]],
+            6 => ['type' => 'doc', 'content' => [[
+                'type' => 'heading',
+                'attrs' => ['level' => 6],
+                'content' => [['type' => 'text', 'text' => 'T6']],
+            ]]],
+        ];
 
+        foreach ($docs as $level => $doc) {
+            $html = self::render($doc);
             $this->assertStringContainsString('<h'.$level.'>T'.$level.'</h'.$level.'>', $html);
         }
     }
 
+    // ─── test_04: invalid heading level clamped ────────────────────────────
+
     public function test_04_clamps_invalid_heading_level(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'heading',
-            'props' => ['level' => 99],
-            'content' => [['type' => 'text', 'text' => 'X', 'styles' => []]],
-        ]]);
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'heading',
+                'attrs' => ['level' => 99],
+                'content' => [['type' => 'text', 'text' => 'X']],
+            ]],
+        ];
 
+        $html = self::render($doc);
         $this->assertStringContainsString('<h6>X</h6>', $html);
     }
 
+    // ─── test_05: HTML escaping in text ────────────────────────────────────
+
     public function test_05_escapes_html_in_user_text(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'paragraph',
+        $doc = [
+            'type' => 'doc',
             'content' => [[
-                'type' => 'text',
-                'text' => '<script>alert("xss")</script>',
-                'styles' => [],
+                'type' => 'paragraph',
+                'attrs' => [],
+                'content' => [['type' => 'text', 'text' => '<script>alert("xss")</script>']],
             ]],
-        ]]);
+        ];
 
+        $html = self::render($doc);
         $this->assertStringNotContainsString('<script>', $html);
         $this->assertStringContainsString('&lt;script&gt;', $html);
     }
 
+    // ─── test_06: mark nesting (bold, italic, underline) ────────────────────
+
     public function test_06_applies_bold_italic_underline_marks(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'paragraph',
+        $doc = [
+            'type' => 'doc',
             'content' => [[
-                'type' => 'text',
-                'text' => 'foo',
-                'styles' => ['bold' => true, 'italic' => true, 'underline' => true],
+                'type' => 'paragraph',
+                'attrs' => [],
+                'content' => [[
+                    'type' => 'text',
+                    'text' => 'foo',
+                    'marks' => [
+                        ['type' => 'bold'],
+                        ['type' => 'italic'],
+                        ['type' => 'underline'],
+                    ],
+                ]],
             ]],
-        ]]);
+        ];
 
-        // Mark order in TiptapHtmlRenderer: bold → italic → underline (outer-first when wrapping).
-        // Outer wrap is the LAST applied → underline outermost.
+        $html = self::render($doc);
+        // Mark order in TiptapHtmlRenderer: bold → italic → underline.
         $this->assertStringContainsString('<u><em><strong>foo</strong></em></u>', $html);
     }
 
+    // ─── test_07: bullet list ───────────────────────────────────────────────
+
     public function test_07_renders_bullet_list_item(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'bulletListItem',
-            'content' => [['type' => 'text', 'text' => 'item1', 'styles' => []]],
-        ]]);
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'bulletList',
+                'content' => [[
+                    'type' => 'listItem',
+                    'attrs' => [],
+                    'content' => [[
+                        'type' => 'paragraph',
+                        'content' => [['type' => 'text', 'text' => 'item1']],
+                    ]],
+                ]],
+            ]],
+        ];
 
+        $html = self::render($doc);
         $this->assertStringContainsString('<ul><li>item1</li></ul>', $html);
     }
 
+    // ─── test_08: link (safe URL) ───────────────────────────────────────────
+
     public function test_08_renders_link(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'paragraph',
+        $doc = [
+            'type' => 'doc',
             'content' => [[
-                'type' => 'link',
-                'href' => 'https://example.com',
-                'content' => [['type' => 'text', 'text' => 'click', 'styles' => []]],
+                'type' => 'paragraph',
+                'attrs' => [],
+                'content' => [[
+                    'type' => 'text',
+                    'text' => 'click',
+                    'marks' => [['type' => 'link', 'attrs' => ['href' => 'https://example.com']]],
+                ]],
             ]],
-        ]]);
+        ];
 
+        $html = self::render($doc);
         $this->assertStringContainsString('<a href="https://example.com">click</a>', $html);
     }
 
+    // ─── test_09: javascript: protocol blocked ──────────────────────────────
+
     public function test_09_blocks_javascript_protocol_in_link(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'paragraph',
+        $doc = [
+            'type' => 'doc',
             'content' => [[
-                'type' => 'link',
-                'href' => 'javascript:alert(1)',
-                'content' => [['type' => 'text', 'text' => 'x', 'styles' => []]],
+                'type' => 'paragraph',
+                'attrs' => [],
+                'content' => [[
+                    'type' => 'text',
+                    'text' => 'x',
+                    'marks' => [['type' => 'link', 'attrs' => ['href' => 'javascript:alert(1)']]],
+                ]],
             ]],
-        ]]);
+        ];
 
-        // javascript: protocol is blocked; href becomes empty string
+        $html = self::render($doc);
         $this->assertStringContainsString('href=""', $html);
         $this->assertStringNotContainsString('javascript:', $html);
     }
 
+    // ─── test_10: expression() in color sanitized ───────────────────────────
+
     public function test_10_sanitizes_color_to_hex_or_named_only(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'paragraph',
-            'props' => ['textColor' => 'expression(alert(1))'],
-            'content' => [['type' => 'text', 'text' => 'x', 'styles' => []]],
-        ]]);
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'paragraph',
+                'attrs' => ['textColor' => 'expression(alert(1))'],
+                'content' => [['type' => 'text', 'text' => 'x']],
+            ]],
+        ];
 
+        $html = self::render($doc);
         $this->assertStringNotContainsString('expression', $html);
         $this->assertStringContainsString('color:inherit', $html);
     }
 
+    // ─── test_11: valid hex color ───────────────────────────────────────────
+
     public function test_11_accepts_valid_hex_color(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'paragraph',
-            'props' => ['textColor' => '#abcdef'],
-            'content' => [['type' => 'text', 'text' => 'x', 'styles' => []]],
-        ]]);
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'paragraph',
+                'attrs' => ['textColor' => '#abcdef'],
+                'content' => [['type' => 'text', 'text' => 'x']],
+            ]],
+        ];
 
+        $html = self::render($doc);
         $this->assertStringContainsString('color:#abcdef', $html);
     }
 
+    // ─── test_12: unknown block type fallback ───────────────────────────────
+
     public function test_12_unknown_block_type_falls_back_safely(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'weirdCustomBlock',
-            'content' => [['type' => 'text', 'text' => 'fallback', 'styles' => []]],
-        ]]);
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'weirdCustomBlock',
+                'attrs' => [],
+                'content' => [['type' => 'text', 'text' => 'fallback']],
+            ]],
+        ];
 
-        // Tiptap converter wraps unknown blocks in a paragraph with data attr.
-        // Renderer outputs them as paragraphs; the text content survives.
+        $html = self::render($doc);
         $this->assertStringContainsString('fallback', $html);
     }
 
+    // ─── test_13: table with header and body ────────────────────────────────
+
     public function test_13_renders_table_with_header_and_body(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'table',
-            'content' => [
-                'rows' => [
-                    ['cells' => [
-                        [['type' => 'text', 'text' => 'Módulo', 'styles' => []]],
-                        [['type' => 'text', 'text' => 'Nota', 'styles' => []]],
-                    ]],
-                    ['cells' => [
-                        [['type' => 'text', 'text' => 'Programación', 'styles' => []]],
-                        [['type' => 'text', 'text' => 'Notable', 'styles' => []]],
-                    ]],
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'table',
+                'content' => [
+                    [
+                        'type' => 'tableRow',
+                        'content' => [
+                            [
+                                'type' => 'tableHeader',
+                                'attrs' => ['colspan' => 1, 'rowspan' => 1],
+                                'content' => [[
+                                    'type' => 'paragraph',
+                                    'content' => [['type' => 'text', 'text' => 'Módulo']],
+                                ]],
+                            ],
+                            [
+                                'type' => 'tableHeader',
+                                'attrs' => ['colspan' => 1, 'rowspan' => 1],
+                                'content' => [[
+                                    'type' => 'paragraph',
+                                    'content' => [['type' => 'text', 'text' => 'Nota']],
+                                ]],
+                            ],
+                        ],
+                    ],
+                    [
+                        'type' => 'tableRow',
+                        'content' => [
+                            [
+                                'type' => 'tableCell',
+                                'attrs' => ['colspan' => 1, 'rowspan' => 1],
+                                'content' => [[
+                                    'type' => 'paragraph',
+                                    'content' => [['type' => 'text', 'text' => 'Programación']],
+                                ]],
+                            ],
+                            [
+                                'type' => 'tableCell',
+                                'attrs' => ['colspan' => 1, 'rowspan' => 1],
+                                'content' => [[
+                                    'type' => 'paragraph',
+                                    'content' => [['type' => 'text', 'text' => 'Notable']],
+                                ]],
+                            ],
+                        ],
+                    ],
                 ],
-            ],
-        ]]);
+            ]],
+        ];
 
+        $html = self::render($doc);
         $this->assertStringContainsString('<table>', $html);
         $this->assertStringContainsString('<th>', $html);
         $this->assertStringContainsString('Módulo', $html);
@@ -197,127 +330,219 @@ final class TiptapHtmlRendererTest extends TestCase
         $this->assertStringContainsString('Programación', $html);
     }
 
+    // ─── test_14: empty table ───────────────────────────────────────────────
+
     public function test_14_empty_table_produces_empty_output(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'table',
-            'content' => ['rows' => []],
-        ]]);
+        $doc = [
+            'type' => 'doc',
+            'content' => [['type' => 'table', 'content' => []]],
+        ];
 
-        $this->assertSame('', $html);
+        $this->assertSame('', self::render($doc));
     }
 
-    // ─── 5 additional edge cases (council recommendation) ─────────────────
+    // ─── test_15: nested bullet list ───────────────────────────────────────
 
     public function test_15_nested_bullet_list(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'bulletListItem',
-            'content' => [['type' => 'text', 'text' => 'outer', 'styles' => []]],
-            'children' => [[
-                'type' => 'bulletListItem',
-                'content' => [['type' => 'text', 'text' => 'inner', 'styles' => []]],
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'bulletList',
+                'content' => [
+                    [
+                        'type' => 'listItem',
+                        'attrs' => [],
+                        'content' => [
+                            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'outer']]],
+                            [
+                                'type' => 'bulletList',
+                                'content' => [[
+                                    'type' => 'listItem',
+                                    'attrs' => [],
+                                    'content' => [[
+                                        'type' => 'paragraph',
+                                        'content' => [['type' => 'text', 'text' => 'inner']],
+                                    ]],
+                                ]],
+                            ],
+                        ],
+                    ],
+                ],
             ]],
-        ]]);
+        ];
 
+        $html = self::render($doc);
         $this->assertStringContainsString('outer', $html);
         $this->assertStringContainsString('inner', $html);
-        // Nested list nesting present.
         $this->assertMatchesRegularExpression('/<ul>.*<ul>.*inner.*<\/ul>.*<\/ul>/s', $html);
     }
 
+    // ─── test_16: checked task list ──────────────────────────────────────────
+
     public function test_16_checkbox_data_preserved(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'checkListItem',
-            'props' => ['checked' => true],
-            'content' => [['type' => 'text', 'text' => 'done', 'styles' => []]],
-        ]]);
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'taskList',
+                'content' => [[
+                    'type' => 'taskItem',
+                    'attrs' => ['checked' => true],
+                    'content' => [[
+                        'type' => 'paragraph',
+                        'content' => [['type' => 'text', 'text' => 'done']],
+                    ]],
+                ]],
+            ]],
+        ];
 
+        $html = self::render($doc);
         $this->assertStringContainsString('class="checklist"', $html);
         $this->assertStringContainsString('checked', $html);
         $this->assertStringContainsString('done', $html);
     }
 
-    public function test_17_xss_in_image_url_is_escaped(): void
-    {
-        $html = self::renderFromBlockNote([[
-            'type' => 'image',
-            'props' => ['url' => '" onerror="alert(1)', 'caption' => 'cap'],
-        ]]);
+    // ─── test_17: XSS in image URL ──────────────────────────────────────────
 
-        $this->assertStringNotContainsString('onerror=', $html);
-        // The escaped attribute uses HTML5 quote escaping (&quot;).
-        $this->assertMatchesRegularExpression('/src="&quot;[^"]*"/', $html);
+    public function test_17_dangerous_image_src_is_dropped(): void
+    {
+        // Quote-injection / non-URL garbage → image is dropped entirely.
+        $bad = self::render([
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'image',
+                'attrs' => ['src' => '" onerror="alert(1)', 'alt' => '', 'caption' => 'cap'],
+            ]],
+        ]);
+        $this->assertStringNotContainsString('onerror=', $bad);
+        $this->assertStringNotContainsString('<img', $bad);
+
+        // javascript: image src is also dropped.
+        $js = self::render([
+            'type' => 'doc',
+            'content' => [['type' => 'image', 'attrs' => ['src' => 'javascript:alert(1)']]],
+        ]);
+        $this->assertStringNotContainsString('<img', $js);
+
+        // Legitimate srcs (https + inline data:image) still render.
+        $https = self::render([
+            'type' => 'doc',
+            'content' => [['type' => 'image', 'attrs' => ['src' => 'https://example.com/a.png', 'alt' => 'a']]],
+        ]);
+        $this->assertStringContainsString('<img src="https://example.com/a.png"', $https);
+
+        $dataImg = self::render([
+            'type' => 'doc',
+            'content' => [['type' => 'image', 'attrs' => ['src' => 'data:image/png;base64,iVBORw0KGgo=']]],
+        ]);
+        $this->assertStringContainsString('data:image/png;base64', $dataImg);
     }
+
+    // ─── test_18: list item with bold + code ────────────────────────────────
 
     public function test_18_list_item_with_multiple_marks(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'bulletListItem',
+        $doc = [
+            'type' => 'doc',
             'content' => [[
-                'type' => 'text',
-                'text' => 'bold',
-                'styles' => ['bold' => true, 'code' => true],
+                'type' => 'bulletList',
+                'content' => [[
+                    'type' => 'listItem',
+                    'attrs' => [],
+                    'content' => [[
+                        'type' => 'paragraph',
+                        'content' => [[
+                            'type' => 'text',
+                            'text' => 'bold',
+                            'marks' => [
+                                ['type' => 'bold'],
+                                ['type' => 'code'],
+                            ],
+                        ]],
+                    ]],
+                ]],
             ]],
-        ]]);
+        ];
 
+        $html = self::render($doc);
         $this->assertStringContainsString('<strong>bold</strong>', $html);
         $this->assertStringContainsString('<code>', $html);
     }
 
+    // ─── test_19: colspan cast to numeric, onclick blocked ──────────────────
+
     public function test_19_colspan_and_rowspan_are_numeric_only(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'table',
-            'content' => [
-                'rows' => [
-                    ['cells' => [
-                        [
-                            'content' => [['type' => 'text', 'text' => 'h', 'styles' => []]],
-                            'props' => ['colspan' => '2" onclick="x', 'rowspan' => 1],
-                        ],
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'table',
+                'content' => [[
+                    'type' => 'tableRow',
+                    'content' => [[
+                        'type' => 'tableHeader',
+                        'attrs' => ['colspan' => 2, 'rowspan' => 1],
+                        'content' => [[
+                            'type' => 'paragraph',
+                            'content' => [['type' => 'text', 'text' => 'h']],
+                        ]],
                     ]],
-                ],
-            ],
-        ]]);
+                ]],
+            ]],
+        ];
 
-        // colspan was cast to int → "2" only.
+        $html = self::render($doc);
         $this->assertStringNotContainsString('onclick', $html);
         $this->assertMatchesRegularExpression('/colspan="2"/', $html);
     }
 
+    // ─── test_20: data: protocol blocked ────────────────────────────────────
+
     public function test_20_data_url_protocol_blocked_in_link(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'paragraph',
+        $doc = [
+            'type' => 'doc',
             'content' => [[
-                'type' => 'link',
-                'href' => 'data:text/html,<script>alert(1)</script>',
-                'content' => [['type' => 'text', 'text' => 'x', 'styles' => []]],
+                'type' => 'paragraph',
+                'attrs' => [],
+                'content' => [[
+                    'type' => 'text',
+                    'text' => 'x',
+                    'marks' => [['type' => 'link', 'attrs' => ['href' => 'data:text/html,<script>alert(1)</script>']]],
+                ]],
             ]],
-        ]]);
+        ];
 
-        // data: protocol is blocked; href becomes empty string
+        $html = self::render($doc);
         $this->assertStringContainsString('href=""', $html);
         $this->assertStringNotContainsString('data:', $html);
     }
 
+    // ─── test_21: vbscript: protocol blocked ────────────────────────────────
+
     public function test_21_vbscript_protocol_blocked_in_link(): void
     {
-        $html = self::renderFromBlockNote([[
-            'type' => 'paragraph',
+        $doc = [
+            'type' => 'doc',
             'content' => [[
-                'type' => 'link',
-                'href' => 'vbscript:msgbox(1)',
-                'content' => [['type' => 'text', 'text' => 'x', 'styles' => []]],
+                'type' => 'paragraph',
+                'attrs' => [],
+                'content' => [[
+                    'type' => 'text',
+                    'text' => 'x',
+                    'marks' => [['type' => 'link', 'attrs' => ['href' => 'vbscript:msgbox(1)']]],
+                ]],
             ]],
-        ]]);
+        ];
 
-        // vbscript: protocol is blocked; href becomes empty string
+        $html = self::render($doc);
         $this->assertStringContainsString('href=""', $html);
         $this->assertStringNotContainsString('vbscript:', $html);
     }
+
+    // ─── test_22: safe protocols allowed ────────────────────────────────────
 
     public function test_22_https_and_http_protocols_allowed(): void
     {
@@ -333,15 +558,20 @@ final class TiptapHtmlRendererTest extends TestCase
         ];
 
         foreach ($validUrls as $url) {
-            $html = self::renderFromBlockNote([[
-                'type' => 'paragraph',
+            $doc = [
+                'type' => 'doc',
                 'content' => [[
-                    'type' => 'link',
-                    'href' => $url,
-                    'content' => [['type' => 'text', 'text' => 'link', 'styles' => []]],
+                    'type' => 'paragraph',
+                    'attrs' => [],
+                    'content' => [[
+                        'type' => 'text',
+                        'text' => 'link',
+                        'marks' => [['type' => 'link', 'attrs' => ['href' => $url]]],
+                    ]],
                 ]],
-            ]]);
+            ];
 
+            $html = self::render($doc);
             $escaped = htmlspecialchars($url, ENT_QUOTES | ENT_HTML5, 'UTF-8');
             $this->assertStringContainsString('href="'.$escaped.'"', $html, "URL $url should be preserved");
         }
