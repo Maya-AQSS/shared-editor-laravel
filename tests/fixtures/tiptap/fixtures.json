@@ -1,0 +1,128 @@
+{
+  "heading": {
+    "type": "doc",
+    "content": [
+      { "type": "heading", "attrs": { "level": 1 }, "content": [{ "type": "text", "text": "Título 1" }] },
+      { "type": "heading", "attrs": { "level": 2 }, "content": [{ "type": "text", "text": "Título 2" }] },
+      { "type": "heading", "attrs": { "level": 3 }, "content": [{ "type": "text", "text": "Título 3" }] }
+    ]
+  },
+  "paragraph_marks": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "normal " },
+          { "type": "text", "text": "negrita", "marks": [{ "type": "bold" }] },
+          { "type": "text", "text": " " },
+          { "type": "text", "text": "cursiva", "marks": [{ "type": "italic" }] },
+          { "type": "text", "text": " " },
+          { "type": "text", "text": "subrayado", "marks": [{ "type": "underline" }] },
+          { "type": "text", "text": " " },
+          { "type": "text", "text": "tachado", "marks": [{ "type": "strike" }] },
+          { "type": "text", "text": " " },
+          { "type": "text", "text": "codigo", "marks": [{ "type": "code" }] }
+        ]
+      }
+    ]
+  },
+  "link": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "ver " },
+          { "type": "text", "text": "docs", "marks": [{ "type": "link", "attrs": { "href": "https://example.com/docs" } }] }
+        ]
+      }
+    ]
+  },
+  "bullet_list": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "bulletList",
+        "content": [
+          { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "uno" }] }] },
+          { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "dos" }] }] }
+        ]
+      }
+    ]
+  },
+  "ordered_list": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "orderedList",
+        "content": [
+          { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "primero", "marks": [{ "type": "bold" }] }] }] },
+          { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "segundo" }] }] }
+        ]
+      }
+    ]
+  },
+  "blockquote": {
+    "type": "doc",
+    "content": [
+      { "type": "blockquote", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "una cita" }] }] }
+    ]
+  },
+  "code_block": {
+    "type": "doc",
+    "content": [
+      { "type": "codeBlock", "content": [{ "type": "text", "text": "## no es heading\nconst x = 1;" }] }
+    ]
+  },
+  "horizontal_rule": {
+    "type": "doc",
+    "content": [
+      { "type": "paragraph", "content": [{ "type": "text", "text": "antes" }] },
+      { "type": "horizontalRule" },
+      { "type": "paragraph", "content": [{ "type": "text", "text": "después" }] }
+    ]
+  },
+  "image": {
+    "type": "doc",
+    "content": [
+      { "type": "image", "attrs": { "src": "/uploads/foto.png", "alt": "una foto" } }
+    ]
+  },
+  "table": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "table",
+        "content": [
+          {
+            "type": "tableRow",
+            "content": [
+              { "type": "tableHeader", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Nombre" }] }] },
+              { "type": "tableHeader", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Edad" }] }] }
+            ]
+          },
+          {
+            "type": "tableRow",
+            "content": [
+              { "type": "tableCell", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Ana" }] }] },
+              { "type": "tableCell", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "30" }] }] }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "task_list": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "taskList",
+        "content": [
+          { "type": "taskItem", "attrs": { "checked": true }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "hecho" }] }] },
+          { "type": "taskItem", "attrs": { "checked": false }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "pendiente" }] }] }
+        ]
+      }
+    ]
+  }
+}
