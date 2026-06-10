@@ -149,6 +149,45 @@ final class TiptapHtmlRendererTest extends TestCase
         $this->assertStringContainsString('<u><em><strong>foo</strong></em></u>', $html);
     }
 
+    public function test_06b_colored_underline_carries_text_decoration_color(): void
+    {
+        // Subrayado + color de texto: el `<u>` debe fijar `text-decoration-color`
+        // con el color del texto, si no la línea sale negra (no hereda del span hijo).
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'paragraph',
+                'attrs' => ['backgroundColor' => '#ffff00'],
+                'content' => [[
+                    'type' => 'text',
+                    'text' => 'rojo',
+                    'marks' => [
+                        ['type' => 'underline'],
+                        ['type' => 'textStyle', 'attrs' => ['color' => '#ff0000']],
+                    ],
+                ]],
+            ]],
+        ];
+
+        $html = self::render($doc);
+        $this->assertStringContainsString('<u style="text-decoration-color:#ff0000">', $html);
+        $this->assertStringContainsString('background-color:#ffff00', $html);
+    }
+
+    public function test_06c_plain_underline_without_color_stays_bare(): void
+    {
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'paragraph',
+                'attrs' => [],
+                'content' => [['type' => 'text', 'text' => 'plano', 'marks' => [['type' => 'underline']]]],
+            ]],
+        ];
+
+        $this->assertStringContainsString('<u>plano</u>', self::render($doc));
+    }
+
     // ─── test_07: bullet list ───────────────────────────────────────────────
 
     public function test_07_renders_bullet_list_item(): void
@@ -328,6 +367,44 @@ final class TiptapHtmlRendererTest extends TestCase
         $this->assertStringContainsString('Módulo', $html);
         $this->assertStringContainsString('<td>', $html);
         $this->assertStringContainsString('Programación', $html);
+    }
+
+    // ─── test_13b: header row wrapped in <thead> (repeats on page breaks) ────
+
+    public function test_13b_header_row_is_wrapped_in_thead(): void
+    {
+        $doc = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'table',
+                'content' => [
+                    [
+                        'type' => 'tableRow',
+                        'content' => [[
+                            'type' => 'tableHeader',
+                            'attrs' => ['colspan' => 1, 'rowspan' => 1],
+                            'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Cabecera']]]],
+                        ]],
+                    ],
+                    [
+                        'type' => 'tableRow',
+                        'content' => [[
+                            'type' => 'tableCell',
+                            'attrs' => ['colspan' => 1, 'rowspan' => 1],
+                            'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Cuerpo']]]],
+                        ]],
+                    ],
+                ],
+            ]],
+        ];
+
+        $html = self::render($doc);
+        // La cabecera va en <thead> para que WeasyPrint (display: table-header-group)
+        // la repita al partir la tabla entre páginas, evitando páginas en blanco.
+        $this->assertStringContainsString('<thead><tr><th>', $html);
+        $this->assertStringContainsString('<tbody><tr><td>', $html);
+        $this->assertStringContainsString('Cabecera', $html);
+        $this->assertStringContainsString('Cuerpo', $html);
     }
 
     // ─── test_14: empty table ───────────────────────────────────────────────

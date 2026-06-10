@@ -150,33 +150,93 @@ final class TiptapHtmlRenderer
             return '';
         }
 
-        $html = '<table><tbody>';
-        $isHeaderRow = true;
-
+        // Cuántas filas iniciales son cabecera. Una fila es cabecera si TODAS sus
+        // celdas son `tableHeader`. Si ninguna lo es (tablas sin header explícito),
+        // se trata la primera fila como cabecera — comportamiento histórico.
+        $headerRowCount = 0;
         foreach ($rowNodes as $row) {
-            $html .= '<tr>';
-            $cells = (array) ($row['content'] ?? []);
-            foreach ($cells as $cell) {
-                if (! is_array($cell)) {
-                    continue;
-                }
-                $cellType = (string) ($cell['type'] ?? '');
-                $cellAttrs = (array) ($cell['attrs'] ?? []);
-                $colspan = (int) ($cellAttrs['colspan'] ?? 1);
-                $rowspan = (int) ($cellAttrs['rowspan'] ?? 1);
-                $colAttr = $colspan > 1 ? ' colspan="'.$colspan.'"' : '';
-                $rowAttr = $rowspan > 1 ? ' rowspan="'.$rowspan.'"' : '';
-
-                $cellHtml = self::renderNodes((array) ($cell['content'] ?? []));
-
-                $tag = ($cellType === 'tableHeader' || $isHeaderRow) ? 'th' : 'td';
-                $html .= '<'.$tag.$colAttr.$rowAttr.'>'.$cellHtml.'</'.$tag.'>';
+            if (! self::isHeaderRow($row)) {
+                break;
             }
-            $html .= '</tr>';
-            $isHeaderRow = false;
+            $headerRowCount++;
+        }
+        if ($headerRowCount === 0) {
+            $headerRowCount = 1;
         }
 
-        return $html.'</tbody></table>';
+        // Emitir las filas de cabecera dentro de `<thead>` para que WeasyPrint
+        // (vía `display: table-header-group`) repita la cabecera cuando la tabla
+        // se parte entre páginas, en lugar de empujar la tabla entera a una
+        // página nueva y dejar un hueco en blanco.
+        $thead = '';
+        $tbody = '';
+        foreach ($rowNodes as $index => $row) {
+            if ($index < $headerRowCount) {
+                $thead .= self::renderTableRow($row, true);
+            } else {
+                $tbody .= self::renderTableRow($row, false);
+            }
+        }
+
+        $html = '<table>';
+        if ($thead !== '') {
+            $html .= '<thead>'.$thead.'</thead>';
+        }
+        if ($tbody !== '') {
+            $html .= '<tbody>'.$tbody.'</tbody>';
+        }
+
+        return $html.'</table>';
+    }
+
+    /**
+     * Una fila es de cabecera si todas sus celdas son `tableHeader`.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private static function isHeaderRow(array $row): bool
+    {
+        $cells = (array) ($row['content'] ?? []);
+        if ($cells === []) {
+            return false;
+        }
+        foreach ($cells as $cell) {
+            if (! is_array($cell) || ($cell['type'] ?? null) !== 'tableHeader') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Renderiza una `<tr>`. En contexto de cabecera todas las celdas se emiten
+     * como `<th>`; en el cuerpo se respeta el tipo de celda (`tableHeader` → th).
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private static function renderTableRow(array $row, bool $headerContext): string
+    {
+        $html = '<tr>';
+        $cells = (array) ($row['content'] ?? []);
+        foreach ($cells as $cell) {
+            if (! is_array($cell)) {
+                continue;
+            }
+            $cellType = (string) ($cell['type'] ?? '');
+            $cellAttrs = (array) ($cell['attrs'] ?? []);
+            $colspan = (int) ($cellAttrs['colspan'] ?? 1);
+            $rowspan = (int) ($cellAttrs['rowspan'] ?? 1);
+            $colAttr = $colspan > 1 ? ' colspan="'.$colspan.'"' : '';
+            $rowAttr = $rowspan > 1 ? ' rowspan="'.$rowspan.'"' : '';
+
+            $cellHtml = self::renderNodes((array) ($cell['content'] ?? []));
+
+            $tag = ($headerContext || $cellType === 'tableHeader') ? 'th' : 'td';
+            $html .= '<'.$tag.$colAttr.$rowAttr.'>'.$cellHtml.'</'.$tag.'>';
+        }
+
+        return $html.'</tr>';
     }
 
     /**
@@ -302,7 +362,14 @@ final class TiptapHtmlRenderer
             $text = '<em>'.$text.'</em>';
         }
         if ($hasUnderline) {
-            $text = '<u>'.$text.'</u>';
+            // El subrayado debe heredar el color del texto. Como el `<u>` envuelve
+            // por FUERA del span de color, `text-decoration-color` cae al color por
+            // defecto (negro) si no se fija explícitamente. Lo propagamos desde
+            // `textStyle.color` para que el subrayado a color se renderice.
+            $deco = ($textColor !== null && $textColor !== '')
+                ? ' style="text-decoration-color:'.self::sanitizeColor($textColor).'"'
+                : '';
+            $text = '<u'.$deco.'>'.$text.'</u>';
         }
         if ($hasStrike) {
             $text = '<s>'.$text.'</s>';
